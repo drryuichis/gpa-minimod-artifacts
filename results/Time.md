@@ -43,8 +43,8 @@ time step 800 / 1000
 time step 900 / 1000
 time step 1000 / 1000
 FINAL min_u,  max_u = -71.111679, 37.468662
-Time kernel: 33.6006 s
-Time modeling: 39.5794 s
+Time kernel: 33.4866 s
+Time modeling: 39.067 s
 ```
 
 ### CUDA , on Intel(R), CUDA Global Memory (3D 8x8x8 Blocking)
@@ -63,7 +63,7 @@ time step 700 / 1000
 time step 800 / 1000
 time step 900 / 1000
 time step 1000 / 1000
-FINAL min_u,  max_u = -71.111732, 37.468632
+FINAL min_u,  max_u = -71.111687, 37.468643
 ndamp = 27 27 27
 grid = 893 893 893
 time step 100 / 1000
@@ -76,7 +76,7 @@ time step 700 / 1000
 time step 800 / 1000
 time step 900 / 1000
 time step 1000 / 1000
-FINAL min_u,  max_u = -71.111732, 37.468632
+FINAL min_u,  max_u = -71.111687, 37.468643
 ndamp = 27 27 27
 grid = 893 893 893
 time step 100 / 1000
@@ -89,8 +89,8 @@ time step 700 / 1000
 time step 800 / 1000
 time step 900 / 1000
 time step 1000 / 1000
-FINAL min_u,  max_u = -71.111732, 37.468632
-Time kernel: 33.4754 s
-Time modeling: 38.3416 s
+FINAL min_u,  max_u = -71.111687, 37.468643
+Time kernel: 33.0029 s
+Time modeling: 36.5508 s
 ```
 

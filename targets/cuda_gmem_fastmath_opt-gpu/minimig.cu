@@ -32,22 +32,25 @@ __global__ void target_inner_3d_kernel(
     const llint k = k0 + threadIdx.x;
 
     if (i > x4-1 || j > y4-1 || k > z4-1) { return; }
-    
-    float lap = coef0*u[IDX3_l(i,j,k)] \
-                +coefx_1*(u[IDX3_l(i+1,j,k)]+u[IDX3_l(i-1,j,k)])
-                +coefy_1*(u[IDX3_l(i,j+1,k)]+u[IDX3_l(i,j-1,k)])
-                +coefz_1*(u[IDX3_l(i,j,k+1)]+u[IDX3_l(i,j,k-1)])
-                +coefx_2*(u[IDX3_l(i+2,j,k)]+u[IDX3_l(i-2,j,k)])
-                +coefy_2*(u[IDX3_l(i,j+2,k)]+u[IDX3_l(i,j-2,k)])
-                +coefz_2*(u[IDX3_l(i,j,k+2)]+u[IDX3_l(i,j,k-2)])
-                +coefx_3*(u[IDX3_l(i+3,j,k)]+u[IDX3_l(i-3,j,k)])
-                +coefy_3*(u[IDX3_l(i,j+3,k)]+u[IDX3_l(i,j-3,k)])
-                +coefz_3*(u[IDX3_l(i,j,k+3)]+u[IDX3_l(i,j,k-3)])
-                +coefx_4*(u[IDX3_l(i+4,j,k)]+u[IDX3_l(i-4,j,k)])
-                +coefy_4*(u[IDX3_l(i,j+4,k)]+u[IDX3_l(i,j-4,k)])
-                +coefz_4*(u[IDX3_l(i,j,k+4)]+u[IDX3_l(i,j,k-4)]);
 
-    v[IDX3_l(i,j,k)] = 2.f*u[IDX3_l(i,j,k)]-v[IDX3_l(i,j,k)]+vp[IDX3(i,j,k)]*lap;
+    float lap = __fmaf_rn(coef0, u[IDX3_l(i,j,k)]
+              , __fmaf_rn(coefx_1, __fadd_rn(u[IDX3_l(i+1,j,k)],u[IDX3_l(i-1,j,k)])
+              , __fmaf_rn(coefy_1, __fadd_rn(u[IDX3_l(i,j+1,k)],u[IDX3_l(i,j-1,k)])
+              , __fmaf_rn(coefz_1, __fadd_rn(u[IDX3_l(i,j,k+1)],u[IDX3_l(i,j,k-1)])
+              , __fmaf_rn(coefx_2, __fadd_rn(u[IDX3_l(i+2,j,k)],u[IDX3_l(i-2,j,k)])
+              , __fmaf_rn(coefy_2, __fadd_rn(u[IDX3_l(i,j+2,k)],u[IDX3_l(i,j-2,k)])
+              , __fmaf_rn(coefz_2, __fadd_rn(u[IDX3_l(i,j,k+2)],u[IDX3_l(i,j,k-2)])
+              , __fmaf_rn(coefx_3, __fadd_rn(u[IDX3_l(i+3,j,k)],u[IDX3_l(i-3,j,k)])
+              , __fmaf_rn(coefy_3, __fadd_rn(u[IDX3_l(i,j+3,k)],u[IDX3_l(i,j-3,k)])
+              , __fmaf_rn(coefz_3, __fadd_rn(u[IDX3_l(i,j,k+3)],u[IDX3_l(i,j,k-3)])
+              , __fmaf_rn(coefx_4, __fadd_rn(u[IDX3_l(i+4,j,k)],u[IDX3_l(i-4,j,k)])
+              , __fmaf_rn(coefy_4, __fadd_rn(u[IDX3_l(i,j+4,k)],u[IDX3_l(i,j-4,k)])
+              , __fmul_rn(coefz_4, __fadd_rn(u[IDX3_l(i,j,k+4)],u[IDX3_l(i,j,k-4)])
+    )))))))))))));
+
+    v[IDX3_l(i,j,k)] = __fmaf_rn(2.f, u[IDX3_l(i,j,k)],
+        __fmaf_rn(vp[IDX3(i,j,k)], lap, -v[IDX3_l(i,j,k)])
+    );
 }
 
 __global__ void target_pml_3d_kernel(
@@ -72,35 +75,66 @@ __global__ void target_pml_3d_kernel(
 
     if (i > x4-1 || j > y4-1 || k > z4-1) { return; }
 
-    float lap = coef0*u[IDX3_l(i,j,k)] \
-                +coefx_1*(u[IDX3_l(i+1,j,k)]+u[IDX3_l(i-1,j,k)])
-                +coefy_1*(u[IDX3_l(i,j+1,k)]+u[IDX3_l(i,j-1,k)])
-                +coefz_1*(u[IDX3_l(i,j,k+1)]+u[IDX3_l(i,j,k-1)])
-                +coefx_2*(u[IDX3_l(i+2,j,k)]+u[IDX3_l(i-2,j,k)])
-                +coefy_2*(u[IDX3_l(i,j+2,k)]+u[IDX3_l(i,j-2,k)])
-                +coefz_2*(u[IDX3_l(i,j,k+2)]+u[IDX3_l(i,j,k-2)])
-                +coefx_3*(u[IDX3_l(i+3,j,k)]+u[IDX3_l(i-3,j,k)])
-                +coefy_3*(u[IDX3_l(i,j+3,k)]+u[IDX3_l(i,j-3,k)])
-                +coefz_3*(u[IDX3_l(i,j,k+3)]+u[IDX3_l(i,j,k-3)])
-                +coefx_4*(u[IDX3_l(i+4,j,k)]+u[IDX3_l(i-4,j,k)])
-                +coefy_4*(u[IDX3_l(i,j+4,k)]+u[IDX3_l(i,j-4,k)])
-                +coefz_4*(u[IDX3_l(i,j,k+4)]+u[IDX3_l(i,j,k-4)]);
+    float lap = __fmaf_rn(coef0, u[IDX3_l(i,j,k)]
+              , __fmaf_rn(coefx_1, __fadd_rn(u[IDX3_l(i+1,j,k)],u[IDX3_l(i-1,j,k)])
+              , __fmaf_rn(coefy_1, __fadd_rn(u[IDX3_l(i,j+1,k)],u[IDX3_l(i,j-1,k)])
+              , __fmaf_rn(coefz_1, __fadd_rn(u[IDX3_l(i,j,k+1)],u[IDX3_l(i,j,k-1)])
+              , __fmaf_rn(coefx_2, __fadd_rn(u[IDX3_l(i+2,j,k)],u[IDX3_l(i-2,j,k)])
+              , __fmaf_rn(coefy_2, __fadd_rn(u[IDX3_l(i,j+2,k)],u[IDX3_l(i,j-2,k)])
+              , __fmaf_rn(coefz_2, __fadd_rn(u[IDX3_l(i,j,k+2)],u[IDX3_l(i,j,k-2)])
+              , __fmaf_rn(coefx_3, __fadd_rn(u[IDX3_l(i+3,j,k)],u[IDX3_l(i-3,j,k)])
+              , __fmaf_rn(coefy_3, __fadd_rn(u[IDX3_l(i,j+3,k)],u[IDX3_l(i,j-3,k)])
+              , __fmaf_rn(coefz_3, __fadd_rn(u[IDX3_l(i,j,k+3)],u[IDX3_l(i,j,k-3)])
+              , __fmaf_rn(coefx_4, __fadd_rn(u[IDX3_l(i+4,j,k)],u[IDX3_l(i-4,j,k)])
+              , __fmaf_rn(coefy_4, __fadd_rn(u[IDX3_l(i,j+4,k)],u[IDX3_l(i,j-4,k)])
+              , __fmul_rn(coefz_4, __fadd_rn(u[IDX3_l(i,j,k+4)],u[IDX3_l(i,j,k-4)])
+    )))))))))))));
 
-	v[IDX3_l(i,j,k)] =
-                    ((2.f-eta[IDX3_eta1(i,j,k)]*eta[IDX3_eta1(i,j,k)]
-                    +2.f*eta[IDX3_eta1(i,j,k)])*u[IDX3_l(i,j,k)]
-                    -v[IDX3_l(i,j,k)]
-                    +vp[IDX3(i,j,k)]*
-                    (lap+phi[IDX3(i,j,k)]))/(1.f+2.f*eta[IDX3_eta1(i,j,k)]);
+    const float s_eta_c = eta[IDX3_eta1(i,j,k)];
 
-                phi[IDX3(i,j,k)]=(phi[IDX3(i,j,k)]-
-                      ((eta[IDX3_eta1(i+1,j,k)]-eta[IDX3_eta1(i-1,j,k)])
-                      *(u[IDX3_l(i+1,j,k)]-u[IDX3_l(i-1,j,k)])*hdx_2
-                      +(eta[IDX3_eta1(i,j+1,k)]-eta[IDX3_eta1(i,j-1,k)])
-                      *(u[IDX3_l(i,j+1,k)]-u[IDX3_l(i,j-1,k)])*hdy_2
-                      +(eta[IDX3_eta1(i,j,k+1)]-eta[IDX3_eta1(i,j,k-1)])
-                      *(u[IDX3_l(i,j,k+1)]-u[IDX3_l(i,j,k-1)])*hdz_2))
-                      /(1.f+eta[IDX3_eta1(i,j,k)]);
+    v[IDX3_l(i,j,k)] = // __fdiv_rn(
+        __fmaf_rn(
+            __fmaf_rn(2.f, s_eta_c,
+                __fsub_rn(2.f,
+                    __fmul_rn(s_eta_c, s_eta_c)
+                )
+            ),
+            u[IDX3_l(i,j,k)],
+            __fmaf_rn(
+                vp[IDX3(i,j,k)],
+                __fadd_rn(lap, phi[IDX3(i,j,k)]),
+                -v[IDX3_l(i,j,k)]
+            )
+        ) //,
+	/
+        __fmaf_rn(2.f, s_eta_c, 1.f)
+    ; //);
+
+
+    phi[IDX3(i,j,k)] = //__fdiv_rn(
+            __fsub_rn(
+                phi[IDX3(i,j,k)],
+                __fmaf_rn(
+                __fmul_rn(
+                    __fsub_rn(eta[IDX3_eta1(i+1,j,k)], eta[IDX3_eta1(i-1,j,k)]),
+                    __fsub_rn(u[IDX3_l(i+1,j,k)], u[IDX3_l(i-1,j,k)])
+                ), hdx_2,
+                __fmaf_rn(
+                __fmul_rn(
+                    __fsub_rn(eta[IDX3_eta1(i,j+1,k)], eta[IDX3_eta1(i,j-1,k)]),
+                    __fsub_rn(u[IDX3_l(i,j+1,k)], u[IDX3_l(i,j-1,k)])
+                ), hdy_2,
+                __fmul_rn(
+                    __fmul_rn(
+                        __fsub_rn(eta[IDX3_eta1(i,j,k+1)], eta[IDX3_eta1(i,j,k-1)]),
+                        __fsub_rn(u[IDX3_l(i,j,k+1)], u[IDX3_l(i,j,k-1)])
+                    ),
+                hdz_2)
+                ))
+            )
+        / //,
+        __fadd_rn(1.f, s_eta_c)
+    ; //);
 }
 
 __global__ void kernel_add_source_kernel(float *g_u, llint idx, float source) {
