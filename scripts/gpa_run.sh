@@ -35,7 +35,7 @@ gpa_run() {
   fi
 
   echo -e "${COLOR_LIGHTGREEN}hpcprof -S $F_STRUCT -I ./+ $D_MEASUREMENTS ${COLOR_CLEAR}"
-  hpcprof -S $F_STRUCT -I ./+ $D_MEASUREMENTS
+  hpcprof -S $F_STRUCT -I ./+ $D_MEASUREMENTS > results/"$P_TARGET"
 
   tar -czvf $F_ARCHIVE $D_DB
 }
