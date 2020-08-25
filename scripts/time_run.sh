@@ -22,7 +22,9 @@ time_run() {
   echo "### $P_DESC" >> $P_REPORT
   echo '```' >> $P_REPORT
   echo -e "${COLOR_LIGHTGREEN}./main_${P_TARGET}_${P_COMPILER} $P_MINIMIG_ARGS $COLOR_CLEAR"
-  ./main_"$P_TARGET"_"$P_COMPILER" $P_MINIMIG_ARGS >> $P_REPORT
+  nvprof ./main_"$P_TARGET"_"$P_COMPILER" $P_MINIMIG_ARGS # >> $P_REPORT 2>&1
+  nvprof ./main_"$P_TARGET"_"$P_COMPILER" $P_MINIMIG_ARGS # >> $P_REPORT 2>&1
+  nvprof ./main_"$P_TARGET"_"$P_COMPILER" $P_MINIMIG_ARGS >> $P_REPORT 2>&1
   echo '```' >> $P_REPORT
   echo "" >> $P_REPORT
 }
