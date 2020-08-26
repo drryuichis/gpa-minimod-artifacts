@@ -58,9 +58,13 @@ extern "C" void find_min_max_u_cuda(
     if (u_remainder != 0) { d_block += 1; }
     llint d_size = d_block * N_THREADS_PER_BLOCK;
 
-    llint reminder_size = N_THREADS_PER_BLOCK - u_remainder;
-    float *reminder = (float *)malloc(reminder_size * sizeof(float));
-    memcpy(reminder, u, reminder_size * sizeof(float));
+    float *remainder = 0;
+    llint remainder_size = 0;
+    if (u_remainder != 0) {
+        remainder_size = N_THREADS_PER_BLOCK - u_remainder;
+        remainder = (float *)malloc(remainder_size * sizeof(float));
+        memcpy(remainder, u, remainder_size * sizeof(float));
+    }
 
     float* max = (float*)malloc(d_block * sizeof(float));
     float *min = (float*)malloc(d_block * sizeof(float));
@@ -71,7 +75,9 @@ extern "C" void find_min_max_u_cuda(
     cudaMalloc(&d_min, d_block * sizeof(float));
 
     cudaMemcpy(d_u, u, u_size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_u+u_size, reminder, reminder_size * sizeof(float), cudaMemcpyHostToDevice);
+    if (u_remainder != 0) {
+        cudaMemcpy(d_u+u_size, remainder, remainder_size * sizeof(float), cudaMemcpyHostToDevice);
+    }
     find_min_max_u_kernel<<<d_block, N_THREADS_PER_BLOCK, sizeof(float) * N_THREADS_PER_BLOCK>>>(d_u, d_max, d_min);
     cudaMemcpy(max, d_max, d_block * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(min, d_min, d_block * sizeof(float), cudaMemcpyDeviceToHost);
@@ -85,7 +91,7 @@ extern "C" void find_min_max_u_cuda(
     cudaFree(d_max);
     cudaFree(d_min);
     cudaFree(d_u);
-    free(reminder);
+    free(remainder);
     free(max);
     free(min);
 }
