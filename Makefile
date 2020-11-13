@@ -1,5 +1,5 @@
-TARGET ?= seq_opt-none
-COMPILER ?= gcc
+TARGET ?= cuda_smem_u_s_opt-gpu
+COMPILER ?= nvcc
 
 PGCCFLAGS ?= -ta=tesla:cc70
 NVCCFLAGS ?= -arch=sm_70
@@ -9,6 +9,10 @@ include config/make.config.$(COMPILER)
 # Additional flags
 ifneq (,$(findstring omp_tasks_,$(TARGET)))
 	CFLAGS += -DOMP_PARALLEL_MASTER_IN_MAIN
+endif
+
+ifeq (,$(findstring cuda_smem_u_s_opt-gpu, $(TARGET)))
+	CFLAGS += --use_fast_math	
 endif
 
 TARGET_SOURCES = $(wildcard targets/$(TARGET)/*.c) $(wildcard targets/$(TARGET)/*.cu)
