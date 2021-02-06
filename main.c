@@ -49,18 +49,14 @@ void gaussian_source(uint nt, float dt, float *restrict source)
     }
 }
 
-void write_io(llint nx, llint ny, llint nz,
-              llint lx, llint ly, llint lz,
-              const float *u, uint istep)
+void write_io(grid_t grid, const float *u, uint istep)
 {
     char filename_buf[32];
-    snprintf(filename_buf, sizeof(filename_buf), "snapshot.it%u.n%llu.raw", istep, nz);
+    snprintf(filename_buf, sizeof(filename_buf), "snapshot.it%u.n%llu.raw", istep, grid.nz);
     FILE *snapshot_file = fopen(filename_buf, "wb");
-    for (llint k = lz; k < nz+lz; ++k) {
-        for (llint j = ly; j < ny+ly; ++j) {
-            for (llint i = lx; i < nx+lx; ++i) {
-                fwrite(&u[IDX3_l(i,j,k)], sizeof(float),1, snapshot_file);
-            }
+    for (llint i = 0; i < grid.nx; ++i) {
+        for (llint j = 0; j < grid.ny; ++j) {
+            fwrite(&u[IDX3_grid(i,j,0,grid)], sizeof(float), grid.nz, snapshot_file);
         }
     }
     /* Clean up */
@@ -133,27 +129,19 @@ int main(int argc, char *argv[])
 
         const llint lx = grid.lx, ly = grid.ly, lz = grid.lz;
 
-        const llint sx = 4+(nx/2), sy = 4+(ny/2), sz = 4+(nz/2);
+        const llint sx = nx/2, sy = ny/2, sz = nz/2;
 
-        float *u = malloc(sizeof(float)*(nx+2*lx)*(ny+2*ly)*(nz+2*lz));
-        float *v = malloc(sizeof(float)*(nx+2*lx)*(ny+2*ly)*(nz+2*lz));
-
-        // PML arrays
-        float *phi = malloc(sizeof(float)*nx*ny*nz);
-        float *eta = malloc(sizeof(float)*(nx+2)*(ny+2)*(nz+2));
+        float *u = allocateHostGrid (grid);
+        float *v = allocateHostGrid (grid);
+        float *phi = allocateHostGrid (grid);
+        float *eta = allocateHostGrid (grid);
+        float *vp = allocateHostGrid (grid);
 
         // Wave field initialization
-        for (llint i = -lx; i < nx+lx; ++i) {
-            for (llint j = -ly; j < ny+ly; ++j) {
-                for (llint k = -lz; k < nz+lz; ++k) {
-                    u[IDX3_l(i,j,k)] = 0.0f;
-                    v[IDX3_l(i,j,k)] = 0.0f;
-                }
-            }
-        }
+        memset (u, 0, gridSize (grid));
+        memset (v, 0, gridSize (grid));
 
         float *source = malloc(sizeof(float)*nsteps);
-        float *vp = malloc(sizeof(float)*nx*ny*nz);
 
         float coefx[5], coefy[5], coefz[5];
         init_coef(grid.dx, coefx);
@@ -166,15 +154,14 @@ int main(int argc, char *argv[])
         for (llint i = 0; i < nx; ++i) {
             for (llint j = 0; j < ny; ++j) {
                 for (llint k = 0; k < nz; ++k) {
-                    phi[IDX3(i,j,k)] = 0.f;
-                    vp[IDX3(i,j,k)] = vp_all;
+                    phi[IDX3_grid(i,j,k,grid)] = 0.f;
+                    vp[IDX3_grid(i,j,k,grid)] = vp_all;
                 }
             }
         }
         (void) gaussian_source(nsteps,dt_sch,source);
         // Init PML
-        init_eta(nx, ny, nz, grid, dt_sch,
-                 eta);
+        init_eta(grid, dt_sch, eta);
 
         const float hdx_2 = 1.f / (4.f * POW2(grid.dx));
         const float hdy_2 = 1.f / (4.f * POW2(grid.dy));
@@ -193,14 +180,11 @@ int main(int argc, char *argv[])
             #pragma omp parallel default(shared)
             #pragma omp master
         #endif
-        #ifdef __NVCC__
+        #if defined(__NVCC__) || defined(__HIP_PLATFORM_HCC__)
+        // printf("pre-target: %f %f %f\n", hdx_2, hdy_2, hdz_2);
         target(
             nsteps, &time_kernel,
-            nx, ny, nz,
-            grid.x1, grid.x2, grid.x3, grid.x4, grid.x5, grid.x6,
-            grid.y1, grid.y2, grid.y3, grid.y4, grid.y5, grid.y6,
-            grid.z1, grid.z2, grid.z3, grid.z4, grid.z5, grid.z6,
-            lx, ly, lz,
+            grid,
             sx, sy, sz,
             hdx_2, hdy_2, hdz_2,
             coefx, coefy, coefz,
@@ -215,8 +199,7 @@ int main(int argc, char *argv[])
 
             /* Write snapshot if requested */
             if (l_snapshot && istep % nsnapshot_freq == 0) {
-                write_io(nx, ny, nz, lx, ly, lz,
-                         u, istep);
+                write_io(grid, u, istep);
             }
 
             /*******************************
@@ -268,15 +251,15 @@ int main(int argc, char *argv[])
         printf("FINAL min_u,  max_u = %f, %f\n", min_u, max_u);
 
         if( finalio )
-	    write_io(nx, ny, nz, lx, ly, lz, u, nsteps);
+	    write_io(grid, u, nsteps);
 
         target_finalize(grid,nsteps,u,v,phi,eta,coefx,coefy,coefz,vp,source);
-        free(u);
-        free(v);
-        free(phi);
-        free(eta);
+        freeHostGrid(u, grid);
+        freeHostGrid(v, grid);
+        freeHostGrid(phi, grid);
+        freeHostGrid(eta, grid);
+        freeHostGrid(vp, grid);
         free(source);
-        free(vp);
 
         warm_up_iter = false;
     }
