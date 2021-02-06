@@ -7,12 +7,13 @@
 #include <time.h>
 
 #include "../../constants.h"
+#include "../../grid.h"
 
 #define N_RADIUS 4
 #define N_THREADS_PER_BLOCK_DIM 8
 
 __global__ void target_inner_3d_kernel(
-    llint nx, llint ny, llint nz,
+    llint nx, llint ny, llint nz, int ldimx, int ldimy, int ldimz,
     llint x3, llint x4, llint y3, llint y4, llint z3, llint z4,
     llint lx, llint ly, llint lz,
     float hdx_2, float hdy_2, float hdz_2,
@@ -38,11 +39,11 @@ __global__ void target_inner_3d_kernel(
     const llint suk = threadIdx.x + N_RADIUS;
 
     const int z_side = threadIdx.z / N_RADIUS;
-    s_u[threadIdx.z+z_side*N_THREADS_PER_BLOCK_DIM][suj][suk] = u[IDX3_l(i0+threadIdx.z+(z_side*2-1)*N_RADIUS,j,k)];
+    s_u[threadIdx.z+z_side*N_THREADS_PER_BLOCK_DIM][suj][suk] = u[IDX3(i0+threadIdx.z+(z_side*2-1)*N_RADIUS,j,k)];
     const int y_side = threadIdx.y / N_RADIUS;
-    s_u[sui][threadIdx.y+y_side*N_THREADS_PER_BLOCK_DIM][suk] = u[IDX3_l(i,j0+threadIdx.y+(y_side*2-1)*N_RADIUS,k)];
-    s_u[sui][suj][threadIdx.x] = u[IDX3_l(i,j,k0+threadIdx.x-N_RADIUS)];
-    s_u[sui][suj][threadIdx.x+N_THREADS_PER_BLOCK_DIM] = u[IDX3_l(i,j,k0+threadIdx.x+N_RADIUS)];
+    s_u[sui][threadIdx.y+y_side*N_THREADS_PER_BLOCK_DIM][suk] = u[IDX3(i,j0+threadIdx.y+(y_side*2-1)*N_RADIUS,k)];
+    s_u[sui][suj][threadIdx.x] = u[IDX3(i,j,k0+threadIdx.x-N_RADIUS)];
+    s_u[sui][suj][threadIdx.x+N_THREADS_PER_BLOCK_DIM] = u[IDX3(i,j,k0+threadIdx.x+N_RADIUS)];
 
     __syncthreads();
 
@@ -63,13 +64,13 @@ __global__ void target_inner_3d_kernel(
               , __fmul_rn(coefz_4, __fadd_rn(s_u[sui][suj][suk+4],s_u[sui][suj][suk-4])
     )))))))))))));
 
-    v[IDX3_l(i,j,k)] = __fmaf_rn(2.f, s_u[sui][suj][suk],
-        __fmaf_rn(vp[IDX3(i,j,k)], lap, -v[IDX3_l(i,j,k)])
+    v[IDX3(i,j,k)] = __fmaf_rn(2.f, s_u[sui][suj][suk],
+        __fmaf_rn(vp[IDX3(i,j,k)], lap, -v[IDX3(i,j,k)])
     );
 }
 
 __global__ void target_pml_3d_kernel(
-    llint nx, llint ny, llint nz,
+    llint nx, llint ny, llint nz, int ldimx, int ldimy, int ldimz,
     llint x3, llint x4, llint y3, llint y4, llint z3, llint z4,
     llint lx, llint ly, llint lz,
     float hdx_2, float hdy_2, float hdz_2,
@@ -95,11 +96,11 @@ __global__ void target_pml_3d_kernel(
     const llint suk = threadIdx.x + N_RADIUS;
 
     const int z_side = threadIdx.z / N_RADIUS;
-    s_u[threadIdx.z+z_side*N_THREADS_PER_BLOCK_DIM][suj][suk] = u[IDX3_l(i0+threadIdx.z+(z_side*2-1)*N_RADIUS,j,k)];
+    s_u[threadIdx.z+z_side*N_THREADS_PER_BLOCK_DIM][suj][suk] = u[IDX3(i0+threadIdx.z+(z_side*2-1)*N_RADIUS,j,k)];
     const int y_side = threadIdx.y / N_RADIUS;
-    s_u[sui][threadIdx.y+y_side*N_THREADS_PER_BLOCK_DIM][suk] = u[IDX3_l(i,j0+threadIdx.y+(y_side*2-1)*N_RADIUS,k)];
-    s_u[sui][suj][threadIdx.x] = u[IDX3_l(i,j,k0+threadIdx.x-N_RADIUS)];
-    s_u[sui][suj][threadIdx.x+N_THREADS_PER_BLOCK_DIM] = u[IDX3_l(i,j,k0+threadIdx.x+N_RADIUS)];
+    s_u[sui][threadIdx.y+y_side*N_THREADS_PER_BLOCK_DIM][suk] = u[IDX3(i,j0+threadIdx.y+(y_side*2-1)*N_RADIUS,k)];
+    s_u[sui][suj][threadIdx.x] = u[IDX3(i,j,k0+threadIdx.x-N_RADIUS)];
+    s_u[sui][suj][threadIdx.x+N_THREADS_PER_BLOCK_DIM] = u[IDX3(i,j,k0+threadIdx.x+N_RADIUS)];
 
     __syncthreads();
 
@@ -120,9 +121,9 @@ __global__ void target_pml_3d_kernel(
         , __fmul_rn(coefz_4, __fadd_rn(s_u[sui][suj][suk+4],s_u[sui][suj][suk-4])
     )))))))))))));
 
-    const float s_eta_c = eta[IDX3_eta1(i,j,k)];
+    const float s_eta_c = eta[IDX3(i,j,k)];
 
-    v[IDX3_l(i,j,k)] = //__fdiv_rn(
+    v[IDX3(i,j,k)] = //__fdiv_rn(
         __fmaf_rn(
             __fmaf_rn(2.f, s_eta_c,
                 __fsub_rn(2.f,
@@ -133,7 +134,7 @@ __global__ void target_pml_3d_kernel(
             __fmaf_rn(
                 vp[IDX3(i,j,k)],
                 __fadd_rn(lap, phi[IDX3(i,j,k)]),
-                -v[IDX3_l(i,j,k)]
+                -v[IDX3(i,j,k)]
             )
         ) / //,
         __fmaf_rn(2.f, s_eta_c, 1.f)
@@ -144,17 +145,17 @@ __global__ void target_pml_3d_kernel(
                 phi[IDX3(i,j,k)],
                 __fmaf_rn(
                 __fmul_rn(
-                    __fsub_rn(eta[IDX3_eta1(i+1,j,k)], eta[IDX3_eta1(i-1,j,k)]),
+                    __fsub_rn(eta[IDX3(i+1,j,k)], eta[IDX3(i-1,j,k)]),
                     __fsub_rn(s_u[sui+1][suj][suk], s_u[sui-1][suj][suk])
                 ), hdx_2,
                 __fmaf_rn(
                 __fmul_rn(
-                    __fsub_rn(eta[IDX3_eta1(i,j+1,k)], eta[IDX3_eta1(i,j-1,k)]),
+                    __fsub_rn(eta[IDX3(i,j+1,k)], eta[IDX3(i,j-1,k)]),
                     __fsub_rn(s_u[sui][suj+1][suk], s_u[sui][suj-1][suk])
                 ), hdy_2,
                 __fmul_rn(
                     __fmul_rn(
-                        __fsub_rn(eta[IDX3_eta1(i,j,k+1)], eta[IDX3_eta1(i,j,k-1)]),
+                        __fsub_rn(eta[IDX3(i,j,k+1)], eta[IDX3(i,j,k-1)]),
                         __fsub_rn(s_u[sui][suj][suk+1], s_u[sui][suj][suk-1])
                     ),
                 hdz_2)
@@ -171,11 +172,7 @@ __global__ void kernel_add_source_kernel(float *g_u, llint idx, float source) {
 
 extern "C" void target(
     uint nsteps, double *time_kernel,
-    llint nx, llint ny, llint nz,
-    llint x1, llint x2, llint x3, llint x4, llint x5, llint x6,
-    llint y1, llint y2, llint y3, llint y4, llint y5, llint y6,
-    llint z1, llint z2, llint z3, llint z4, llint z5, llint z6,
-    llint lx, llint ly, llint lz,
+    const grid_t grid,
     llint sx, llint sy, llint sz,
     float hdx_2, float hdy_2, float hdz_2,
     const float *__restrict__ coefx, const float *__restrict__ coefy, const float *__restrict__ coefz,
@@ -184,31 +181,20 @@ extern "C" void target(
 ) {
     struct timespec start, end;
 
-    const llint size_u = (nx + 2 * lx) * (ny + 2 * ly) * (nz + 2 * lz);
-    const llint size_v = size_u;
-    const llint size_phi = nx*ny*nz;
-    const llint size_vp = size_phi;
-    const llint size_eta = (nx+2)*(ny+2)*(nz+2);
+    float *d_u = allocateDeviceGrid(grid);
+    float *d_v = allocateDeviceGrid(grid);
+    float *d_phi = allocateDeviceGrid(grid);
+    float *d_eta = allocateDeviceGrid(grid);
+    float *d_vp = allocateDeviceGrid(grid);
 
-    const llint size_u_ext = ((((nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM + 1) * N_THREADS_PER_BLOCK_DIM) + 2 * lx)
-                           * ((((ny+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM + 1) * N_THREADS_PER_BLOCK_DIM) + 2 * ly)
-                           * ((((nz+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM + 1) * N_THREADS_PER_BLOCK_DIM) + 2 * lz);
+    cudaMemset (d_u, 0, gridSize(grid));
+    cudaMemset (d_v, 0, gridSize(grid));
+    cudaMemcpy(d_vp, vp, gridSize(grid), cudaMemcpyDefault);
+    cudaMemcpy(d_phi, phi, gridSize(grid), cudaMemcpyDefault);
+    cudaMemcpy(d_eta, eta, gridSize(grid), cudaMemcpyDefault);
 
-    float *d_u, *d_v, *d_vp, *d_phi, *d_eta;
-    cudaMalloc(&d_u, sizeof(float) * size_u_ext);
-    cudaMalloc(&d_v, sizeof(float) * size_u_ext);
-    cudaMalloc(&d_vp, sizeof(float) * size_vp);
-    cudaMalloc(&d_phi, sizeof(float) * size_phi);
-    cudaMalloc(&d_eta, sizeof(float) * size_eta);
-
-    cudaMemcpy(d_u, u, sizeof(float) * size_u, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_v, v, sizeof(float) * size_v, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_vp, vp, sizeof(float) * size_vp, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_phi, phi, sizeof(float) * size_phi, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_eta, eta, sizeof(float) * size_eta, cudaMemcpyHostToDevice);
-
-    const llint xmin = 0; const llint xmax = nx;
-    const llint ymin = 0; const llint ymax = ny;
+    const llint xmin = 0; const llint xmax = grid.nx;
+    const llint ymin = 0; const llint ymax = grid.ny;
 
     dim3 threadsPerBlock(N_THREADS_PER_BLOCK_DIM, N_THREADS_PER_BLOCK_DIM, N_THREADS_PER_BLOCK_DIM);
 
@@ -223,12 +209,14 @@ extern "C" void target(
         clock_gettime(CLOCK_REALTIME, &start);
 
         dim3 n_block_front(
-            (z2-z1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (ny+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_front, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            xmin,xmax,ymin,ymax,z1,z2,
-            lx,ly,lz,
+            (grid.z2-grid.z1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.ny+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_front, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            xmin, xmax, ymin, ymax, grid.z1, grid.z2,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -238,12 +226,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_top(
-            (z4-z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (y2-y1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_top, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            xmin,xmax,y1,y2,z3,z4,
-            lx,ly,lz,
+            (grid.z4-grid.z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.y2-grid.y1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_top, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            xmin,xmax,grid.y1,grid.y2,grid.z3,grid.z4,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -253,12 +243,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_left(
-            (z4-z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (y4-y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (x2-x1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_left, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            x1,x2,y3,y4,z3,z4,
-            lx,ly,lz,
+            (grid.z4-grid.z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.y4-grid.y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.x2-grid.x1+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_left, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            grid.x1,grid.x2,grid.y3,grid.y4,grid.z3,grid.z4,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -268,12 +260,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_center(
-            (z4-z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (y4-y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (x4-x3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_inner_3d_kernel<<<n_block_center, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            x3,x4,y3,y4,z3,z4,
-            lx,ly,lz,
+            (grid.z4-grid.z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.y4-grid.y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.x4-grid.x3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_inner_3d_kernel<<<n_block_center, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            grid.x3,grid.x4,grid.y3,grid.y4,grid.z3,grid.z4,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -283,12 +277,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_right(
-            (z4-z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (y4-y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (x6-x5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_right, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            x5,x6,y3,y4,z3,z4,
-            lx,ly,lz,
+            (grid.z4-grid.z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.y4-grid.y3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.x6-grid.x5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_right, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            grid.x5,grid.x6,grid.y3,grid.y4,grid.z3,grid.z4,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -298,12 +294,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_bottom(
-            (z4-z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (y6-y5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_bottom, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            xmin,xmax,y5,y6,z3,z4,
-            lx,ly,lz,
+            (grid.z4-grid.z3+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.y6-grid.y5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_bottom, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            xmin,xmax,grid.y5,grid.y6,grid.z3,grid.z4,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -313,12 +311,14 @@ extern "C" void target(
             d_phi, d_eta);
 
         dim3 n_block_back(
-            (z6-z5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (ny+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
-            (nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
-        target_pml_3d_kernel<<<n_block_back, threadsPerBlock, 0, streams[0]>>>(nx,ny,nz,
-            xmin,xmax,ymin,ymax,z5,z6,
-            lx,ly,lz,
+            (grid.z6-grid.z5+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.ny+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM,
+            (grid.nx+N_THREADS_PER_BLOCK_DIM-1) / N_THREADS_PER_BLOCK_DIM);
+        target_pml_3d_kernel<<<n_block_back, threadsPerBlock, 0, streams[0]>>>(
+            grid.nx, grid.ny, grid.nz,
+            grid.ldimx, grid.ldimy, grid.ldimz,
+            xmin,xmax,ymin,ymax,grid.z5,grid.z6,
+            grid.lx, grid.ly, grid.lz,
             hdx_2, hdy_2, hdz_2,
             coefx[0]+coefy[0]+coefz[0],
             coefx[1], coefx[2], coefx[3], coefx[4],
@@ -331,7 +331,7 @@ extern "C" void target(
             cudaStreamSynchronize(streams[i]);
         }
 
-        kernel_add_source_kernel<<<1, 1>>>(d_v, IDX3_l(sx,sy,sz), source[istep]);
+        kernel_add_source_kernel<<<1, 1>>>(d_v, IDX3_grid(sx,sy,sz,grid), source[istep-1]);
         clock_gettime(CLOCK_REALTIME, &end);
         *time_kernel += (end.tv_sec  - start.tv_sec) +
                         (double)(end.tv_nsec - start.tv_nsec) / 1.0e9;
@@ -352,11 +352,11 @@ extern "C" void target(
     }
 
 
-    cudaMemcpy(u, d_u, sizeof(float) * size_u, cudaMemcpyDeviceToHost);
+    cudaMemcpy(u, d_u, gridSize(grid), cudaMemcpyDeviceToHost);
 
-    cudaFree(d_u);
-    cudaFree(d_v);
-    cudaFree(d_vp);
-    cudaFree(d_phi);
-    cudaFree(d_eta);
+    freeDeviceGrid(d_u, grid);
+    freeDeviceGrid(d_v, grid);
+    freeDeviceGrid(d_vp, grid);
+    freeDeviceGrid(d_phi, grid);
+    freeDeviceGrid(d_eta, grid);
 }
