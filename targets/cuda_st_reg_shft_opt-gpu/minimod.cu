@@ -19,7 +19,7 @@ __constant__ float c_coefx[N_RADIUS+1];
 __constant__ float c_coefy[N_RADIUS+1];
 __constant__ float c_coefz[N_RADIUS+1];
 
-#if ENABLE_MEMCPY_ASYNC
+#ifdef ENABLE_MEMCPY_ASYNC
 #include <cuda_pipeline.h>
 #endif
 
@@ -31,11 +31,7 @@ __global__ void kernel_7r_25d_inner(
     const float *__restrict__ u, float *__restrict__ v, const float *__restrict__ vp,
     const float *__restrict__ phi, const float *__restrict__ eta
 ) {
-    #if ENABLE_MEMCPY_ASYNC
     __shared__ float s_u[2][N_THREADS_Y_DIM+2*N_RADIUS][N_THREADS_X_DIM+2*N_RADIUS];
-    #else
-    __shared__ float s_u[N_THREADS_Y_DIM+2*N_RADIUS][N_THREADS_X_DIM+2*N_RADIUS];
-    #endif
 
     const llint j0 = y3 + blockIdx.y * blockDim.y;
     const llint k0 = z3 + blockIdx.x * blockDim.x;
@@ -65,9 +61,10 @@ __global__ void kernel_7r_25d_inner(
     infront3 = u[IDX3(x3+2,j,k)];
     infront4 = u[IDX3(x3+3,j,k)];
 
-    #if ENABLE_MEMCPY_ASYNC
-
     int double_buffer_current = 0, double_buffer_next = 1;
+
+    #ifdef ENABLE_MEMCPY_ASYNC
+
     if (threadIdx.y < N_RADIUS) {
         __pipeline_memcpy_async(&s_u[double_buffer_current][threadIdx.y][suk], &u[IDX3(x3, j - N_RADIUS, k)], sizeof(float));
         __pipeline_memcpy_async(&s_u[double_buffer_current][threadIdx.y+sje+N_RADIUS][suk], &u[IDX3(x3, threadIdx.y+je, k)], sizeof(float));
@@ -92,6 +89,10 @@ __global__ void kernel_7r_25d_inner(
         infront3 = infront4;
         infront4 = u[IDX3(i+N_RADIUS,j,k)];
 
+        __pipeline_wait_prior(0);
+
+        __syncthreads();
+        
         if (i+1 < x4) {
             if (threadIdx.y < N_RADIUS) {
                 __pipeline_memcpy_async(&s_u[double_buffer_next][threadIdx.y][suk], &u[IDX3(i+1, j - N_RADIUS, k)], sizeof(float));
@@ -103,12 +104,7 @@ __global__ void kernel_7r_25d_inner(
             }
             __pipeline_memcpy_async(&s_u[double_buffer_next][suj][suk], &u[IDX3(i+1,j,k)], sizeof(float));
             __pipeline_commit();
-            __pipeline_wait_prior(1);
-        } else {
-            __pipeline_wait_prior(0);
         }
-
-        __syncthreads();
 
         if (j < y4 && k < z4) {
             float lap = __fmaf_rn(c_coef0, current
@@ -137,6 +133,16 @@ __global__ void kernel_7r_25d_inner(
 
     #else
 
+    if (threadIdx.y < N_RADIUS) {
+      s_u[double_buffer_current][threadIdx.y][suk] = u[IDX3(x3, j - N_RADIUS, k)];
+      s_u[double_buffer_current][threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(x3, threadIdx.y+je, k)];
+    }
+    if (threadIdx.x < N_RADIUS) {
+      s_u[double_buffer_current][suj][threadIdx.x] = u[IDX3(x3,j,k - N_RADIUS)];
+      s_u[double_buffer_current][suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(x3,j,threadIdx.x+ke)];
+    }
+    s_u[double_buffer_current][suj][suk] = u[IDX3(x3,j,k)];
+
     for (llint i = x3; i < x4; i++) {
         // advance the slice (move the thread-front)
         behind4  = behind3;
@@ -148,39 +154,44 @@ __global__ void kernel_7r_25d_inner(
         infront2 = infront3;
         infront3 = infront4;
         infront4 = u[IDX3(i+N_RADIUS,j,k)];
+
         __syncthreads();
 
-        if (threadIdx.y < N_RADIUS) {
-            s_u[threadIdx.y][suk] = u[IDX3(i, j - N_RADIUS, k)];
-            s_u[threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(i, threadIdx.y+je, k)];
+        if (i+1 < x4) {
+          if (threadIdx.y < N_RADIUS) {
+              s_u[double_buffer_next][threadIdx.y][suk] = u[IDX3(i+1, j - N_RADIUS, k)];
+              s_u[double_buffer_next][threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(i+1, threadIdx.y+je, k)];
+          }
+          if (threadIdx.x < N_RADIUS) {
+              s_u[double_buffer_next][suj][threadIdx.x] = u[IDX3(i+1,j,k - N_RADIUS)];
+              s_u[double_buffer_next][suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(i+1,j,threadIdx.x+ke)];
+          }
+          s_u[double_buffer_next][suj][suk] = u[IDX3(i+1,j,k)];
         }
-        if (threadIdx.x < N_RADIUS) {
-            s_u[suj][threadIdx.x] = u[IDX3(i,j,k - N_RADIUS)];
-            s_u[suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(i,j,threadIdx.x+ke)];
-        }
-        s_u[suj][suk] = u[IDX3(i,j,k)];
-        __syncthreads();
 
         if (j < y4 && k < z4) {
             float lap = __fmaf_rn(c_coef0, current
                       , __fmaf_rn(c_coefx[1], __fadd_rn(infront1,behind1)
-                      , __fmaf_rn(c_coefy[1], __fadd_rn(s_u[suj+1][suk],s_u[suj-1][suk])
-                      , __fmaf_rn(c_coefz[1], __fadd_rn(s_u[suj][suk+1],s_u[suj][suk-1])
+                      , __fmaf_rn(c_coefy[1], __fadd_rn(s_u[double_buffer_current][suj+1][suk],s_u[double_buffer_current][suj-1][suk])
+                      , __fmaf_rn(c_coefz[1], __fadd_rn(s_u[double_buffer_current][suj][suk+1],s_u[double_buffer_current][suj][suk-1])
                       , __fmaf_rn(c_coefx[2], __fadd_rn(infront2,behind2)
-                      , __fmaf_rn(c_coefy[2], __fadd_rn(s_u[suj+2][suk],s_u[suj-2][suk])
-                      , __fmaf_rn(c_coefz[2], __fadd_rn(s_u[suj][suk+2],s_u[suj][suk-2])
+                      , __fmaf_rn(c_coefy[2], __fadd_rn(s_u[double_buffer_current][suj+2][suk],s_u[double_buffer_current][suj-2][suk])
+                      , __fmaf_rn(c_coefz[2], __fadd_rn(s_u[double_buffer_current][suj][suk+2],s_u[double_buffer_current][suj][suk-2])
                       , __fmaf_rn(c_coefx[3], __fadd_rn(infront3,behind3)
-                      , __fmaf_rn(c_coefy[3], __fadd_rn(s_u[suj+3][suk],s_u[suj-3][suk])
-                      , __fmaf_rn(c_coefz[3], __fadd_rn(s_u[suj][suk+3],s_u[suj][suk-3])
+                      , __fmaf_rn(c_coefy[3], __fadd_rn(s_u[double_buffer_current][suj+3][suk],s_u[double_buffer_current][suj-3][suk])
+                      , __fmaf_rn(c_coefz[3], __fadd_rn(s_u[double_buffer_current][suj][suk+3],s_u[double_buffer_current][suj][suk-3])
                       , __fmaf_rn(c_coefx[4], __fadd_rn(infront4,behind4)
-                      , __fmaf_rn(c_coefy[4], __fadd_rn(s_u[suj+4][suk],s_u[suj-4][suk])
-                      , __fmul_rn(c_coefz[4], __fadd_rn(s_u[suj][suk+4],s_u[suj][suk-4])
+                      , __fmaf_rn(c_coefy[4], __fadd_rn(s_u[double_buffer_current][suj+4][suk],s_u[double_buffer_current][suj-4][suk])
+                      , __fmul_rn(c_coefz[4], __fadd_rn(s_u[double_buffer_current][suj][suk+4],s_u[double_buffer_current][suj][suk-4])
             )))))))))))));
 
             v[IDX3(i,j,k)] = __fmaf_rn(2.f, current,
                 __fmaf_rn(vp[IDX3(i,j,k)], lap, -v[IDX3(i,j,k)])
             );
         }
+
+        double_buffer_current = 1 - double_buffer_current;
+        double_buffer_next = 1 - double_buffer_next;
     }
 
     #endif
@@ -194,11 +205,7 @@ __global__ void kernel_7r_25d_pml(
     const float *__restrict__ u, float *__restrict__ v, const float *__restrict__ vp,
     float *__restrict__ phi, const float *__restrict__ eta
 ) {
-    #if ENABLE_MEMCPY_ASYNC
     __shared__ float s_u[2][N_THREADS_Y_DIM+2*N_RADIUS][N_THREADS_X_DIM+2*N_RADIUS];
-    #else
-    __shared__ float s_u[N_THREADS_Y_DIM+2*N_RADIUS][N_THREADS_X_DIM+2*N_RADIUS];
-    #endif
 
     const llint j0 = y3 + blockIdx.y * blockDim.y;
     const llint k0 = z3 + blockIdx.x * blockDim.x;
@@ -228,9 +235,10 @@ __global__ void kernel_7r_25d_pml(
     infront3 = u[IDX3(x3+2,j,k)];
     infront4 = u[IDX3(x3+3,j,k)];
 
-    #if ENABLE_MEMCPY_ASYNC
-
     int double_buffer_current = 0, double_buffer_next = 1;
+
+    #ifdef ENABLE_MEMCPY_ASYNC
+
     if (threadIdx.y < N_RADIUS) {
         __pipeline_memcpy_async(&s_u[double_buffer_current][threadIdx.y][suk], &u[IDX3(x3, j - N_RADIUS, k)], sizeof(float));
         __pipeline_memcpy_async(&s_u[double_buffer_current][threadIdx.y+sje+N_RADIUS][suk], &u[IDX3(x3, threadIdx.y+je, k)], sizeof(float));
@@ -254,6 +262,10 @@ __global__ void kernel_7r_25d_pml(
         infront3 = infront4;
         infront4 = u[IDX3(i+N_RADIUS,j,k)];
 
+        __pipeline_wait_prior(0);
+
+        __syncthreads();
+
         if (i+1 < x4) {
             if (threadIdx.y < N_RADIUS) {
                 __pipeline_memcpy_async(&s_u[double_buffer_next][threadIdx.y][suk], &u[IDX3(i+1, j - N_RADIUS, k)], sizeof(float));
@@ -265,12 +277,7 @@ __global__ void kernel_7r_25d_pml(
             }
             __pipeline_memcpy_async(&s_u[double_buffer_next][suj][suk], &u[IDX3(i+1,j,k)], sizeof(float));
             __pipeline_commit();
-          __pipeline_wait_prior(1);
-        } else {
-          __pipeline_wait_prior(0);
         }
-
-        __syncthreads();
 
         if (j < y4 && k < z4) {
             float lap = __fmaf_rn(c_coef0, current
@@ -339,6 +346,17 @@ __global__ void kernel_7r_25d_pml(
 
     #else
 
+    if (threadIdx.y < N_RADIUS) {
+      s_u[double_buffer_current][threadIdx.y][suk] = u[IDX3(x3, j - N_RADIUS, k)];
+      s_u[double_buffer_current][threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(x3, threadIdx.y+je, k)];
+    }
+    if (threadIdx.x < N_RADIUS) {
+      s_u[double_buffer_current][suj][threadIdx.x] = u[IDX3(x3,j,k - N_RADIUS)];
+      s_u[double_buffer_current][suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(x3,j,threadIdx.x+ke)];
+    }
+
+    s_u[double_buffer_current][suj][suk] = u[IDX3(x3,j,k)];
+
     for (llint i = x3; i < x4; i++) {
         // advance the slice (move the thread-front)
         behind4  = behind3;
@@ -353,33 +371,33 @@ __global__ void kernel_7r_25d_pml(
 
         __syncthreads();
 
-        if (threadIdx.y < N_RADIUS) {
-            s_u[threadIdx.y][suk] = u[IDX3(i, j - N_RADIUS, k)];
-            s_u[threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(i, threadIdx.y+je, k)];
-        }
-        if (threadIdx.x < N_RADIUS) {
-            s_u[suj][threadIdx.x] = u[IDX3(i,j,k - N_RADIUS)];
-            s_u[suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(i,j,threadIdx.x+ke)];
-        }
+        if (i+1 < x4) {
+          if (threadIdx.y < N_RADIUS) {
+              s_u[double_buffer_next][threadIdx.y][suk] = u[IDX3(i+1, j - N_RADIUS, k)];
+              s_u[double_buffer_next][threadIdx.y+sje+N_RADIUS][suk] = u[IDX3(i+1, threadIdx.y+je, k)];
+          }
+          if (threadIdx.x < N_RADIUS) {
+              s_u[double_buffer_next][suj][threadIdx.x] = u[IDX3(i+1,j,k - N_RADIUS)];
+              s_u[double_buffer_next][suj][threadIdx.x+ske+N_RADIUS] = u[IDX3(i+1,j,threadIdx.x+ke)];
+          }
 
-        s_u[suj][suk] = u[IDX3(i,j,k)];
-
-        __syncthreads();
+          s_u[double_buffer_next][suj][suk] = u[IDX3(i+1,j,k)];
+        }
 
         if (j < y4 && k < z4) {
             float lap = __fmaf_rn(c_coef0, current
                       , __fmaf_rn(c_coefx[1], __fadd_rn(infront1,behind1)
-                      , __fmaf_rn(c_coefy[1], __fadd_rn(s_u[suj+1][suk],s_u[suj-1][suk])
-                      , __fmaf_rn(c_coefz[1], __fadd_rn(s_u[suj][suk+1],s_u[suj][suk-1])
+                      , __fmaf_rn(c_coefy[1], __fadd_rn(s_u[double_buffer_current][suj+1][suk],s_u[double_buffer_current][suj-1][suk])
+                      , __fmaf_rn(c_coefz[1], __fadd_rn(s_u[double_buffer_current][suj][suk+1],s_u[double_buffer_current][suj][suk-1])
                       , __fmaf_rn(c_coefx[2], __fadd_rn(infront2,behind2)
-                      , __fmaf_rn(c_coefy[2], __fadd_rn(s_u[suj+2][suk],s_u[suj-2][suk])
-                      , __fmaf_rn(c_coefz[2], __fadd_rn(s_u[suj][suk+2],s_u[suj][suk-2])
+                      , __fmaf_rn(c_coefy[2], __fadd_rn(s_u[double_buffer_current][suj+2][suk],s_u[double_buffer_current][suj-2][suk])
+                      , __fmaf_rn(c_coefz[2], __fadd_rn(s_u[double_buffer_current][suj][suk+2],s_u[double_buffer_current][suj][suk-2])
                       , __fmaf_rn(c_coefx[3], __fadd_rn(infront3,behind3)
-                      , __fmaf_rn(c_coefy[3], __fadd_rn(s_u[suj+3][suk],s_u[suj-3][suk])
-                      , __fmaf_rn(c_coefz[3], __fadd_rn(s_u[suj][suk+3],s_u[suj][suk-3])
+                      , __fmaf_rn(c_coefy[3], __fadd_rn(s_u[double_buffer_current][suj+3][suk],s_u[double_buffer_current][suj-3][suk])
+                      , __fmaf_rn(c_coefz[3], __fadd_rn(s_u[double_buffer_current][suj][suk+3],s_u[double_buffer_current][suj][suk-3])
                       , __fmaf_rn(c_coefx[4], __fadd_rn(infront4,behind4)
-                      , __fmaf_rn(c_coefy[4], __fadd_rn(s_u[suj+4][suk],s_u[suj-4][suk])
-                      , __fmul_rn(c_coefz[4], __fadd_rn(s_u[suj][suk+4],s_u[suj][suk-4])
+                      , __fmaf_rn(c_coefy[4], __fadd_rn(s_u[double_buffer_current][suj+4][suk],s_u[double_buffer_current][suj-4][suk])
+                      , __fmul_rn(c_coefz[4], __fadd_rn(s_u[double_buffer_current][suj][suk+4],s_u[double_buffer_current][suj][suk-4])
             )))))))))))));
 
             const float s_eta_c = eta[IDX3(i,j,k)];
@@ -412,12 +430,12 @@ __global__ void kernel_7r_25d_pml(
                         __fmaf_rn(
                         __fmul_rn(
                             __fsub_rn(eta[IDX3(i,j+1,k)], eta[IDX3(i,j-1,k)]),
-                            __fsub_rn(s_u[suj+1][suk], s_u[suj-1][suk])
+                            __fsub_rn(s_u[double_buffer_current][suj+1][suk], s_u[double_buffer_current][suj-1][suk])
                         ), hdy_2,
                         __fmul_rn(
                             __fmul_rn(
                                 __fsub_rn(eta[IDX3(i,j,k+1)], eta[IDX3(i,j,k-1)]),
-                                __fsub_rn(s_u[suj][suk+1], s_u[suj][suk-1])
+                                __fsub_rn(s_u[double_buffer_current][suj][suk+1], s_u[double_buffer_current][suj][suk-1])
                             ),
                         hdz_2)
                         ))
@@ -426,6 +444,9 @@ __global__ void kernel_7r_25d_pml(
                 __fadd_rn(1.f, s_eta_c)
             );
         }
+
+        double_buffer_current = 1 - double_buffer_current;
+        double_buffer_next = 1 - double_buffer_next;
     }
 
     #endif
